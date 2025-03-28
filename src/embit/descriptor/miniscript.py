@@ -54,11 +54,22 @@ class Miniscript(DescriptorBase):
 
     @classmethod
     def read_from(cls, s, taproot=False):
-        op, char = read_until(s, b"(")
+        op, char = read_until(s, b"(,)")
+        if char in (b",", b")"):
+            s.seek(-1, 1)
         op = op.decode()
         wrappers = ""
         if ":" in op:
             wrappers, op = op.split(":")
+        # Handle 0 and 1 literals
+        if op in ["0", "1"]:
+            miniscript = BoolLiteral(int(op))
+            for w in reversed(wrappers):
+                if w not in WRAPPER_NAMES:
+                    raise MiniscriptError("Unknown wrapper")
+                WrapperCls = WRAPPERS[WRAPPER_NAMES.index(w)]
+                miniscript = WrapperCls(miniscript, taproot=taproot)
+            return miniscript
         if char != b"(":
             raise MiniscriptError("Missing operator")
         if op not in OPERATOR_NAMES:
@@ -118,6 +129,23 @@ class Miniscript(DescriptorBase):
 
 ########### Known fragments (miniscript operators) ##############
 
+class BoolLiteral(Miniscript):
+    def __init__(self, value, **kwargs):
+        super().__init__(**kwargs)
+        self.value = value  # 0 or 1
+
+    @property
+    def type(self):
+        return "B"
+    
+    def verify(self):
+        super().verify()
+        if self.value not in (0, 1):
+            raise MiniscriptError("BoolLiteral should be 0 or 1")
+
+
+    def __str__(self):
+        return str(self.value)
 
 class OneArg(Miniscript):
     NARGS = 1
