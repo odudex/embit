@@ -54,6 +54,14 @@ class Miniscript(DescriptorBase):
 
     @classmethod
     def read_from(cls, s, taproot=False):
+        def wrapped(m_script):
+            for w in reversed(wrappers):
+                if w not in WRAPPER_NAMES:
+                    raise MiniscriptError("Unknown wrapper")
+                WrapperCls = WRAPPERS[WRAPPER_NAMES.index(w)]
+                m_script = WrapperCls(m_script, taproot=taproot)
+            return m_script
+
         op, char = read_until(s, b"(,)")
         if char in (b",", b")"):
             s.seek(-1, 1)
@@ -64,12 +72,7 @@ class Miniscript(DescriptorBase):
         # Handle 0 and 1 literals
         if op in ["0", "1"]:
             miniscript = JUST_1() if int(op) else JUST_0()
-            for w in reversed(wrappers):
-                if w not in WRAPPER_NAMES:
-                    raise MiniscriptError("Unknown wrapper")
-                WrapperCls = WRAPPERS[WRAPPER_NAMES.index(w)]
-                miniscript = WrapperCls(miniscript, taproot=taproot)
-            return miniscript
+            return wrapped(miniscript)
         if char != b"(":
             raise MiniscriptError("Missing operator")
         if op not in OPERATOR_NAMES:
@@ -78,12 +81,7 @@ class Miniscript(DescriptorBase):
         MiniscriptCls = OPERATORS[OPERATOR_NAMES.index(op)]
         args = MiniscriptCls.read_arguments(s, taproot=taproot)
         miniscript = MiniscriptCls(*args, taproot=taproot)
-        for w in reversed(wrappers):
-            if w not in WRAPPER_NAMES:
-                raise MiniscriptError("Unknown wrapper")
-            WrapperCls = WRAPPERS[WRAPPER_NAMES.index(w)]
-            miniscript = WrapperCls(miniscript, taproot=taproot)
-        return miniscript
+        return wrapped(miniscript)
 
     @classmethod
     def read_arguments(cls, s, taproot=False):
@@ -131,27 +129,25 @@ class Miniscript(DescriptorBase):
 
 
 class JUST_0(Miniscript):
-    NAME = "0"
     TYPE = "B"
+    PROPS = "zud"
 
     def inner_compile(self):
         return Number(0).compile()
 
-    @property
-    def properties(self):
-        return "zud"
+    def __str__(self):
+        return "0"
 
 
 class JUST_1(Miniscript):
-    NAME = "1"
     TYPE = "B"
+    PROPS = "zu"
 
     def inner_compile(self):
         return Number(1).compile()
 
-    @property
-    def properties(self):
-        return "zu"
+    def __str__(self):
+        return "1"
 
 
 class OneArg(Miniscript):
