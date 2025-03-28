@@ -5,6 +5,7 @@ from embit.descriptor.arguments import KeyHash, Number
 from embit.descriptor.miniscript import OPERATORS, WRAPPERS
 from embit.descriptor.errors import MiniscriptError
 from embit.descriptor.checksum import add_checksum, DescriptorError
+from embit.networks import NETWORKS
 from embit import ec
 
 
@@ -199,7 +200,9 @@ class DescriptorTest(TestCase):
         ]
 
         for desc in generalistic_descs:
-            Descriptor.from_string(desc)
+            desc = Descriptor.from_string(desc)
+            # Derive an address
+            desc.derive(0, 0).address(network=NETWORKS["main"])
 
     def test_invalid_miniscript(self):
         """Ensure an error is raised when parsing invalid miniscript"""

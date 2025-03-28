@@ -63,7 +63,7 @@ class Miniscript(DescriptorBase):
             wrappers, op = op.split(":")
         # Handle 0 and 1 literals
         if op in ["0", "1"]:
-            miniscript = BoolTrue() if int(op) else BoolFalse()
+            miniscript = JUST_1() if int(op) else JUST_0()
             for w in reversed(wrappers):
                 if w not in WRAPPER_NAMES:
                     raise MiniscriptError("Unknown wrapper")
@@ -130,29 +130,28 @@ class Miniscript(DescriptorBase):
 ########### Known fragments (miniscript operators) ##############
 
 
-class BoolFalse(Miniscript):
-    @property
-    def type(self):
-        return "B"
+class JUST_0(Miniscript):
+    NAME = "0"
+    TYPE = "B"
 
     def inner_compile(self):
         return Number(0).compile()
 
-    def __str__(self):
-        return "0"
-
-
-class BoolTrue(Miniscript):
-
     @property
-    def type(self):
-        return "B"
+    def properties(self):
+        return "zud"
+
+
+class JUST_1(Miniscript):
+    NAME = "1"
+    TYPE = "B"
 
     def inner_compile(self):
         return Number(1).compile()
 
-    def __str__(self):
-        return "1"
+    @property
+    def properties(self):
+        return "zu"
 
 
 class OneArg(Miniscript):
