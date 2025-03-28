@@ -69,9 +69,9 @@ class Miniscript(DescriptorBase):
         wrappers = ""
         if ":" in op:
             wrappers, op = op.split(":")
-        # Handle 0 and 1 literals
-        if op in ["0", "1"]:
-            miniscript = JUST_1() if int(op) else JUST_0()
+        # handle boolean literals: 0 or 1
+        if op in ("0", "1"):
+            miniscript = JustOne() if op == "1" else JustZero()
             return wrapped(miniscript)
         if char != b"(":
             raise MiniscriptError("Missing operator")
@@ -128,7 +128,7 @@ class Miniscript(DescriptorBase):
 ########### Known fragments (miniscript operators) ##############
 
 
-class JUST_0(Miniscript):
+class JustZero(Miniscript):
     TYPE = "B"
     PROPS = "zud"
 
@@ -139,7 +139,7 @@ class JUST_0(Miniscript):
         return "0"
 
 
-class JUST_1(Miniscript):
+class JustOne(Miniscript):
     TYPE = "B"
     PROPS = "zu"
 
