@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-08-08
+
+### Changed
+
+- Align PSBT version handling with BIP 174 and BIP 370 by propagating version
+  information to input and output scope parsing and excluding v2-only fields
+  from v0 PSBTs in both `PSBT` and `PSBTView`.
+
 ## [0.8.1] - 2026-06-01
 
 ### Added
