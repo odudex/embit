@@ -109,8 +109,11 @@ class ParsingTest(TestCase):
         with self.assertRaises(RuntimeError):
             compact.read_from(BytesIO(b""))
         for prefix, width in ((253, 2), (254, 4), (255, 8)):
-            raw = bytes([prefix]) + b"\x01" + bytes(width - 1)
-            self.assertEqual(compact.from_bytes(raw), 1)  # Minimality is unchanged.
+            # non-minimal encodings are rejected like Bitcoin Core does
+            with self.assertRaises(ValueError):
+                compact.from_bytes(bytes([prefix]) + b"\x01" + bytes(width - 1))
+            raw = bytes([prefix]) + bytes(width - 1) + b"\x01"
+            self.assertEqual(compact.from_bytes(raw), 1 << (8 * (width - 1)))
             for count in range(width):
                 with self.assertRaises(RuntimeError):
                     compact.from_bytes(raw[: 1 + count])
@@ -250,12 +253,23 @@ class ParsingTest(TestCase):
         stream = TrackingStream(raw[:100])
         with self.assertRaises(PSBTError):
             _ = GlobalTransactionView(stream, 0, len(raw)).locktime
-        # Counts with extended encodings retain their actual offsets.
+        # Non-minimal counts are rejected rather than re-encoded to find offsets.
         raw = self.transaction().serialize()
-        extended = raw[:4] + b"\xfd\x01\x00" + raw[5:46] + b"\xfd\x01\x00" + raw[47:]
-        view = GlobalTransactionView(BytesIO(extended), 0, len(extended))
+        for extended in (
+            raw[:4] + b"\xfd\x01\x00" + raw[5:],
+            raw[:46] + b"\xfd\x01\x00" + raw[47:],
+        ):
+            with self.assertRaises(PSBTError):
+                _ = GlobalTransactionView(BytesIO(extended), 0, len(extended)).locktime
+        # Counts with extended encodings retain their actual offsets.
+        tx = self.transaction()
+        tx.vin = [TransactionInput(bytes(range(32)), i) for i in range(253)]
+        tx.vout = [TransactionOutput(i, Script(b"\x51")) for i in range(253)]
+        raw = tx.serialize()
+        view = GlobalTransactionView(BytesIO(raw), 0, len(raw))
         self.assertEqual(view.locktime, 0)
-        self.assertEqual(view.vout(0).value, 42)
+        self.assertEqual(view.vin(252).vout, 252)
+        self.assertEqual(view.vout(252).value, 252)
 
     def test_scope_reads_do_not_rescan_inputs(self):
         tx = self.transaction()
@@ -284,8 +298,7 @@ class ParsingTest(TestCase):
             self.assertTrue(stream.max_read <= 32)
             # Accessed fields still require complete reads after traversal.
             stream.short_at = view.vin0_offset
-            error = TransactionError if length is None else PSBTError
-            with self.assertRaises(error):
+            with self.assertRaises(PSBTError):
                 view.vin(0)
 
     def test_view_checks_unvisited_ranges_after_external_seek(self):
