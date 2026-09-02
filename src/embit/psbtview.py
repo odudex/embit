@@ -426,7 +426,7 @@ class PSBTView:
             for k, (v_off, v_len) in deferred_kvs.items():
                 stream.seek(v_off)
                 global_kvs[k] = read_exact(stream, v_len)
-        return cls(
+        res = cls(
             stream,
             num_inputs,
             num_outputs,
@@ -438,6 +438,13 @@ class PSBTView:
             tx_len,
             global_kvs=global_kvs if version == 2 else None,
         )
+        # Walk every input and output map once, reading only the key/value
+        # lengths: the declared counts must match the maps actually present
+        # and nothing may follow the last one, like PSBT.parse enforces.
+        res.seek_to_scope(num_inputs + num_outputs)
+        if len(stream.read(1)) > 0:
+            raise PSBTError("Unexpected extra bytes")
+        return res
 
     def _skip_scope(self):
         off = 0
