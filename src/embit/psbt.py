@@ -472,6 +472,9 @@ class InputScope(PSBTScope):
             elif self.non_witness_utxo is not None:
                 raise PSBTError("Duplicated utxo value")
             else:
+                # parse the transaction straight from the stream, but hold it to
+                # the declared value length so a wrong length cannot shift the
+                # key/value framing of the rest of the map
                 length = read_compact(stream)
                 value_stream = _BoundedReader(stream, length)
                 # For PSBTv2, PSBT_IN_OUTPUT_INDEX may follow PSBT_IN_NON_WITNESS_UTXO;
