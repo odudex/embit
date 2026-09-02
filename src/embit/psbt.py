@@ -1316,7 +1316,9 @@ class PSBT(EmbitBase):
         else:  # PSBTv0 (version is None or 0)
             tx_bytes = global_kvs.pop(b"\x00")  # Remove so it's not in unknown
             try:
-                tx_for_v0 = cls.TX_CLS.parse(tx_bytes)
+                # BIP-174: the unsigned tx is serialized without witness data,
+                # so a leading zero is an empty input list, not a segwit marker
+                tx_for_v0 = cls.TX_CLS.parse(tx_bytes, segwit=False)
             except _PARSE_ERRORS as e:
                 raise PSBTError("Invalid global transaction: %s" % e)
             # BIP-174: the global transaction must be unsigned
