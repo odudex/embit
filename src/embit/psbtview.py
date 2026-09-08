@@ -254,6 +254,8 @@ class PSBTView:
         self._tx_version = self.tx.version if self.tx else None
         self._locktime = self.tx.locktime if self.tx else None
         # For PSBTv2: dict of all global key→value pairs (excluding the \x00 global tx).
+        # Validated fixed/count values are bytes; other values are stored as
+        # (offset, length) tuples and streamed from the source on write.
         # This is the single source of truth for every global field, including
         # PSBT_GLOBAL_TX_MODIFIABLE (\x06). None for PSBTv0 where the global
         # scope is streamed verbatim.
@@ -308,12 +310,11 @@ class PSBTView:
         num_inputs = None
         num_outputs = None
         tx_offset = None
-        # Collect all non-global-tx key-value pairs for PSBTv2 global scope rewriting.
-        # The global scope is small, so materialising it avoids byte-level injection.
+        # Buffer only the bounded global fields needed for PSBTv2 validation
+        # and transaction handling.
         global_kvs = OrderedDict()
-        # key -> (value_offset, value_len) for globals whose value is only needed
-        # if this turns out to be a PSBTv2. PSBTView is RAM-constrained, so we
-        # skip them on the first pass and read them back below only when used.
+        # key -> (value_offset, value_len) for other globals. Keep references
+        # so arbitrarily large values can be copied on write without buffering.
         deferred_kvs = OrderedDict()
         while True:
             # read key and update cursor
@@ -382,11 +383,7 @@ class PSBTView:
         if None in [version or tx_offset, num_inputs, num_outputs]:
             raise PSBTError("Missing something important in PSBT")
         if version == 2:
-            # PSBTv2 rebuilds its global scope from _global_kvs on write, so now
-            # (and only now) we need the values we skipped over above.
-            for k, (v_off, v_len) in deferred_kvs.items():
-                stream.seek(v_off)
-                global_kvs[k] = read_exact(stream, v_len)
+            global_kvs.update(deferred_kvs)
         res = cls(
             stream,
             num_inputs,
@@ -1222,7 +1219,7 @@ class PSBTView:
 
         # first we write global scope
         if self._global_kvs is not None:
-            # PSBTv2: reconstruct global scope from the materialised key-value dict
+            # PSBTv2: reconstruct global scope from buffered fields and references
             # in the same order PSBT.write_to uses: xpubs, the BIP-370 fields,
             # then the unknown fields as they appeared in the source.
             writable_stream.write(self.MAGIC)
@@ -1236,7 +1233,17 @@ class PSBTView:
             ]
             for k in keys:
                 res += ser_string(writable_stream, k)
-                res += ser_string(writable_stream, self._global_kvs[k])
+                value = self._global_kvs[k]
+                if isinstance(value, tuple):
+                    value_offset, value_len = value
+                    self.stream.seek(value_offset)
+                    res += writable_stream.write(compact.to_bytes(value_len))
+                    copied = read_write(self.stream, writable_stream, value_len)
+                    if copied != value_len:
+                        raise PSBTError("Truncated global value")
+                    res += copied
+                else:
+                    res += ser_string(writable_stream, value)
             writable_stream.write(b"\x00")  # global scope separator
             res += 1
         else:

@@ -1015,6 +1015,49 @@ class TestPSBTViewParity:
         # PSBT and PSBTView agree even when the source order differs from theirs
         assert PSBT.parse(out.getvalue()).serialize() == out.getvalue()
 
+    @pytest.mark.parametrize("prefix", [b"", b"embedded PSBT"])
+    def test_large_unknown_globals_are_streamed(self, prefix):
+        class BoundedReads(BytesIO):
+            def read(self, size=-1):
+                assert 0 <= size <= 128, "Oversized payload read"
+                return super().read(size)
+
+            def readinto(self, buffer):
+                assert len(buffer) <= 128, "Oversized copy buffer"
+                return super().readinto(buffer)
+
+        payload = bytes(range(256)) * 1024 + b"tail"
+        xpub = SIGNING_ROOT.to_public().serialize()
+        extra = (
+            kv(b"\xf0", payload)
+            + kv(b"\x01" + xpub, SIGNING_ROOT.my_fingerprint + bytes(4))
+            + kv(b"\xfc\x01x\x00", payload[::-1])
+            + kv(b"\xf1", b"")
+        )
+        raw = raw_v2([V2_IN], [V2_OUT], extra_globals=extra)
+        source = BoundedReads(prefix + raw)
+        source.seek(len(prefix))
+        view = PSBTView.view(source)
+        psbt = PSBT.parse(raw)
+        # Rewriting mutable globals must preserve every streamed value, even
+        # across repeated writes and changes in the source cursor.
+        for flags in (3, 0, None):
+            view.tx_modifiable_flags = psbt.tx_modifiable_flags = flags
+            source.seek(0)
+            out = BytesIO()
+            written = view.write_to(out)
+            assert written == len(out.getvalue())
+            assert out.getvalue() == psbt.serialize()
+
+    def test_streamed_global_rejects_truncated_source_on_write(self):
+        payload = b"large unknown value" * 100
+        raw = raw_v2([], [], extra_globals=kv(b"\xf0", payload))
+        source = BytesIO(raw)
+        view = PSBTView.view(source)
+        source.truncate(raw.index(payload) + 1)
+        with pytest.raises(PSBTError, match="Truncated global value"):
+            view.write_to(BytesIO())
+
     def test_scope_constructor_accepts_v2_unknowns(self):
         txid = bytes(range(32))
         inp = InputScope(
