@@ -445,6 +445,7 @@ class InputScope(PSBTScope):
         https://blog.trezor.io/details-of-firmware-updates-for-trezor-one-version-1-9-1-and-trezor-model-t-version-2-3-1-1eba8f60f2dd
         For legacy txs we need to verify it to calculate fee.
         """
+        self._verified = False
         if self.non_witness_utxo or self._txhash:
             txid = (
                 bytes(reversed(self._txhash))
@@ -452,6 +453,22 @@ class InputScope(PSBTScope):
                 else self.non_witness_utxo.txid()
             )
             if self.txid == txid:
+                if self._txhash:
+                    utxo = self._utxo
+                else:
+                    if (
+                        self.vout is None
+                        or self.vout < 0
+                        or self.vout >= len(self.non_witness_utxo.vout)
+                    ):
+                        raise PSBTError("Invalid non_witness_utxo output index")
+                    utxo = self.non_witness_utxo.vout[self.vout]
+                if utxo is None:
+                    raise PSBTError("Missing non_witness_utxo output")
+                # Fee calculation and signing may use witness_utxo instead of
+                # the authenticated output, so both representations must agree.
+                if self.witness_utxo is not None and self.witness_utxo != utxo:
+                    raise PSBTError("Witness utxo doesn't match non_witness_utxo")
                 self._verified = True
                 return True
             else:
