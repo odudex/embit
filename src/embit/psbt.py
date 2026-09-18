@@ -1526,6 +1526,7 @@ class PSBT(EmbitBase):
             sigdata += bytes([sighash])
         inp.taproot_key_sig = sigdata
         inp.final_scriptwitness = Witness([sigdata])
+        self._update_tx_modifiable(sighash)
         return 1
 
     def sign_input_with_tapkey(
@@ -1570,6 +1571,7 @@ class PSBT(EmbitBase):
             if sighash != SIGHASH.DEFAULT:
                 sigdata += bytes([sighash])
             inp.taproot_sigs[(pub, leaf)] = sigdata
+            self._update_tx_modifiable(sighash)
             counter += 1
         return counter
 

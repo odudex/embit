@@ -1223,6 +1223,67 @@ class TestNonWitnessUtxoLength:
 class TestTxModifiableAfterSigning:
     """PSBT_GLOBAL_TX_MODIFIABLE after a real sign_with, in PSBT and PSBTView"""
 
+    @pytest.mark.parametrize("version", [None, 2])
+    @pytest.mark.parametrize("scriptpath", [False, True])
+    @pytest.mark.parametrize(
+        "sighash, expected",
+        [(0, 0), (1, 0), (2, 2), (3, 4), (0x81, 1), (0x82, 3), (0x83, 5)],
+    )
+    def test_direct_taproot_signing_updates_flags(
+        self, version, scriptpath, sighash, expected
+    ):
+        from .test_taproot import TAP_PSBTS, KEY_A, TAPTREE_PSBT, TAPTREE_KEYS
+
+        psbt = PSBT.from_string(TAPTREE_PSBT if scriptpath else TAP_PSBTS[0])
+        root = TAPTREE_KEYS[1] if scriptpath else KEY_A
+        if version == 2:
+            psbt = to_v2(psbt)
+            psbt.tx_modifiable_flags = TxModifiable.INPUTS | TxModifiable.OUTPUTS
+        key = next(
+            root.derive(der.derivation)
+            for _, der in psbt.inputs[0].taproot_bip32_derivations.values()
+            if der.fingerprint == root.my_fingerprint
+        )
+        view = PSBTView.view(BytesIO(psbt.serialize()))
+        inp = view.input(0)
+        count = psbt.sign_input_with_tapkey(key, 0, sighash=sighash)
+        assert count > 0
+        assert view.sign_input_with_tapkey(key, 0, inp, sighash=sighash) == count
+        if scriptpath:
+            assert inp.taproot_sigs
+            assert inp.taproot_sigs == psbt.inputs[0].taproot_sigs
+        else:
+            assert inp.taproot_key_sig == psbt.inputs[0].taproot_key_sig
+            pub = ec.PublicKey.from_xonly(inp.utxo.script_pubkey.data[2:])
+            assert pub.schnorr_verify(
+                ec.SchnorrSig(inp.taproot_key_sig[:64]), psbt.sighash(0, sighash)
+            )
+        flags = expected if version == 2 else None
+        assert psbt.tx_modifiable_flags == view.tx_modifiable_flags == flags
+        out = BytesIO()
+        view.write_to(
+            out, extra_input_streams=[BytesIO(inp.serialize(version=version))]
+        )
+        assert PSBT.parse(out.getvalue()).tx_modifiable_flags == flags
+        assert out.getvalue() == psbt.serialize()
+        if version == 2 and not expected & TxModifiable.OUTPUTS:
+            with pytest.raises(PSBTError, match="Outputs are not modifiable"):
+                psbt.add_output(OutputScope(vout=TransactionOutput(1, Script(b""))))
+
+    @pytest.mark.parametrize("scriptpath", [False, True])
+    def test_direct_taproot_signing_with_unrelated_key_preserves_flags(
+        self, scriptpath
+    ):
+        from .test_taproot import TAP_PSBTS, TAPTREE_PSBT
+
+        psbt = to_v2(PSBT.from_string(TAPTREE_PSBT if scriptpath else TAP_PSBTS[0]))
+        psbt.tx_modifiable_flags = 3
+        view = PSBTView.view(BytesIO(psbt.serialize()))
+        key = ec.PrivateKey((1).to_bytes(32, "big"))
+        assert psbt.sign_input_with_tapkey(key, 0) == 0
+        assert view.sign_input_with_tapkey(key, 0) == 0
+        assert psbt.tx_modifiable_flags == view.tx_modifiable_flags == 3
+
     @pytest.mark.parametrize(
         "sighash, expected",
         [
