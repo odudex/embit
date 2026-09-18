@@ -1209,8 +1209,6 @@ class PSBTView:
             for pub, leaf in inp.taproot_sigs:
                 ser_string(sig_stream, b"\x14" + pub.xonly() + leaf)
                 ser_string(sig_stream, inp.taproot_sigs[(pub, leaf)])
-            if counter > 0:
-                self._update_tx_modifiable(inp_sighash)
             return counter
 
         h = self.sighash(i, sighash=inp_sighash, input_scope=inp)

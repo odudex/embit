@@ -1701,9 +1701,7 @@ class PSBT(EmbitBase):
                         inp,
                         sighash=inp_sighash,
                     )
-                if tap_sigs > 0:
-                    counter += tap_sigs
-                    self._update_tx_modifiable(inp_sighash)
+                counter += tap_sigs
                 continue
 
             # hash can be reused
