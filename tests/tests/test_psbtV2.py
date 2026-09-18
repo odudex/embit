@@ -16,7 +16,7 @@ from embit.psbt import (
 )
 from embit.psbtview import PSBTView
 from embit.script import Script, Witness
-from embit import compact
+from embit import compact, ec, script
 from embit.base import EmbitError
 from .test_psbtview import PSBTS as VIEW_PSBTS, ROOT as SIGNING_ROOT
 
@@ -525,6 +525,75 @@ class TestPSBTv2Constructor:
         inp.txid = bytes(32)
         with pytest.raises(PSBTError):
             psbt.add_input(inp)
+
+    @pytest.mark.parametrize(
+        "fallback, height, new_height, rejected",
+        [
+            (0, None, 100, True),
+            (0, 100, 200, True),
+            (200, None, 100, True),
+            (0, 100, 100, False),
+            (0, 100, None, False),
+        ],
+    )
+    def test_add_input_preserves_signed_locktime(
+        self, fallback, height, new_height, rejected
+    ):
+        key = ec.PrivateKey((1).to_bytes(32, "big"))
+        psbt = PSBT.create_v2(fallback_locktime=fallback)
+        inp = InputScope(vin=TransactionInput(bytes(32), 0, sequence=0xFFFFFFFE))
+        inp.witness_utxo = TransactionOutput(10000, script.p2wpkh(key.get_public_key()))
+        inp.required_height_locktime = height
+        psbt.add_input(inp)
+        psbt.add_output(OutputScope(vout=TransactionOutput(9000, Script(b"\x51"))))
+        sighash = SIGHASH.ALL | SIGHASH.ANYONECANPAY
+        assert psbt.sign_with(key, sighash=sighash) == 1
+        signature = ec.Signature.parse(inp.partial_sigs[key.get_public_key()][:-1])
+        original = psbt.serialize()
+        extra = InputScope(vin=TransactionInput(b"\x01" * 32, 0))
+        extra.required_height_locktime = new_height
+        if rejected:
+            with pytest.raises(PSBTError, match="existing signatures"):
+                psbt.add_input(extra)
+            assert psbt.serialize() == original
+            assert psbt._raw_input_count_from_global == 1
+        else:
+            psbt.add_input(extra)
+            assert len(psbt.inputs) == 2
+        assert key.verify(signature, psbt.sighash(0, sighash=sighash))
+
+    @pytest.mark.parametrize(
+        "signature_field, signature",
+        [
+            ("taproot_key_sig", bytes(64)),
+            ("taproot_sigs", {(b"pub", b"leaf"): bytes(64)}),
+            ("final_scriptsig", Script(b"\x01\x01")),
+            ("final_scriptwitness", Witness([bytes(64)])),
+        ],
+    )
+    def test_add_input_preserves_locktime_for_all_signature_fields(
+        self, signature_field, signature
+    ):
+        psbt = PSBT.create_v2()
+        inp = InputScope(vin=TransactionInput(bytes(32), 0))
+        inp.required_height_locktime = 100
+        inp.required_time_locktime = 500000000
+        setattr(inp, signature_field, signature)
+        psbt.add_input(inp)
+        extra = InputScope(vin=TransactionInput(b"\x01" * 32, 0))
+        extra.required_time_locktime = 500000000
+        with pytest.raises(PSBTError, match="existing signatures"):
+            psbt.add_input(extra)
+        assert len(psbt.inputs) == 1
+        assert psbt.determine_locktime() == 100
+
+    def test_unsigned_constructor_can_change_locktime(self):
+        psbt = PSBT.create_v2()
+        psbt.add_input(InputScope(vin=TransactionInput(bytes(32), 0)))
+        extra = InputScope(vin=TransactionInput(b"\x01" * 32, 0))
+        extra.required_height_locktime = 100
+        psbt.add_input(extra)
+        assert psbt.determine_locktime() == 100
 
     def test_add_output_appends_and_updates_count(self):
         """add_output() appends the scope and increments the global output count"""

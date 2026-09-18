@@ -1138,8 +1138,10 @@ class PSBT(EmbitBase):
         )
 
     def _validate_locktime_compatibility(self, inputs):
-        """Verify that the given input list has mutually compatible locktime requirements."""
-        choose_locktime(*self._classify_locktimes(inputs), fallback=0)
+        """Return the locktime, rejecting incompatible input requirements."""
+        return choose_locktime(
+            *self._classify_locktimes(inputs), fallback=self.locktime or 0
+        )
 
     @property
     def tx(self):
@@ -1755,7 +1757,21 @@ class PSBT(EmbitBase):
                 input_scope.required_height_locktime is not None
                 or input_scope.required_time_locktime is not None
             ):
-                self._validate_locktime_compatibility(self.inputs + [input_scope])
+                locktime = self._validate_locktime_compatibility(
+                    self.inputs + [input_scope]
+                )
+                # ANYONECANPAY permits adding inputs, but its signatures still
+                # commit to nLockTime. Finalized inputs may have dropped their
+                # partial signatures, so check their final scripts as well.
+                if locktime != self.determine_locktime() and any(
+                    inp.partial_sigs
+                    or inp.taproot_sigs
+                    or inp.taproot_key_sig is not None
+                    or inp.final_scriptsig is not None
+                    or inp.final_scriptwitness is not None
+                    for inp in self.inputs
+                ):
+                    raise PSBTError("Cannot change locktime with existing signatures")
         self.inputs.append(input_scope)
         if self.version == 2:
             self._raw_input_count_from_global = len(self.inputs)
