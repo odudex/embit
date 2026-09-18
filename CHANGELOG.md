@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reject conflicting witness and non-witness UTXOs during verification, in
+  both full and compressed parsing, so verified fee calculations cannot use
+  an unauthenticated amount or script.
 - Validate PSBTv2 count fields canonically and raise `PSBTError` instead of
   `RuntimeError`/`ValueError` on malformed values in both parse paths.
 - `PSBTView` matched PSBTv2 prevout and output fields by key prefix, so a
