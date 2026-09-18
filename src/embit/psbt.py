@@ -329,6 +329,7 @@ class InputScope(PSBTScope):
         self.witness_utxo = None
         self._utxo = None
         self._txhash = None
+        self._utxo_vout = None
         self._verified = False
         self.partial_sigs = OrderedDict()
         self.sighash_type = None
@@ -371,13 +372,35 @@ class InputScope(PSBTScope):
         self.taproot_scripts = OrderedDict()
 
     def update(self, other):
+        prevout_changed = (
+            other.txid is not None and other.txid != self.txid
+        ) or (other.vout is not None and other.vout != self.vout)
         self.txid = other.txid or self.txid
         self.vout = other.vout if other.vout is not None else self.vout
         self.sequence = other.sequence if other.sequence is not None else self.sequence
         self.unknown.update(other.unknown)
         self.non_witness_utxo = other.non_witness_utxo or self.non_witness_utxo
         self.witness_utxo = other.witness_utxo or self.witness_utxo
-        self._utxo = other._utxo or self._utxo
+        # Keep the cached output with the hash and index it was streamed with.
+        if other._utxo is not None:
+            self._utxo = other._utxo
+            self._txhash = other._txhash
+            self._utxo_vout = other._utxo_vout
+        elif prevout_changed or other.non_witness_utxo is not None:
+            # A full replacement transaction can be checked afresh. Without
+            # one, the old cached output cannot authenticate the new prevout.
+            self._utxo = None
+            self._txhash = None
+            self._utxo_vout = None
+        # merged prevout or utxo data has not been through verify()
+        if (
+            other.txid
+            or other.vout is not None
+            or other.non_witness_utxo
+            or other.witness_utxo
+            or other._utxo
+        ):
+            self._verified = False
         self.partial_sigs.update(other.partial_sigs)
         self.sighash_type = (
             other.sighash_type if other.sighash_type is not None else self.sighash_type
@@ -454,6 +477,8 @@ class InputScope(PSBTScope):
             )
             if self.txid == txid:
                 if self._txhash:
+                    if self.vout != self._utxo_vout:
+                        raise PSBTError("Cached utxo doesn't match output index")
                     utxo = self._utxo
                 else:
                     if (
@@ -508,6 +533,7 @@ class InputScope(PSBTScope):
                     value_stream.finish()
                     self._txhash = txhash
                     self._utxo = txout
+                    self._utxo_vout = effective_vout
                 else:
                     tx = self.TX_CLS.read_from(value_stream)
                     value_stream.finish()

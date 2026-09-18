@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `InputScope.update()` clears the verified state when it merges prevout or
+  UTXO data, keeps a compressed UTXO together with its transaction hash and
+  output index, and discards stale caches when the prevout or full previous
+  transaction changes, so `verify()` cannot pass on a merged foreign output.
 - Update PSBTv2 transaction modification flags when signing directly with a
   Taproot key, for both key and script paths in `PSBT` and `PSBTView`.
 - Preserve the signed transaction locktime when adding PSBTv2 inputs, including
