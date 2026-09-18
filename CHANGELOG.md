@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve the signed transaction locktime when adding PSBTv2 inputs, including
+  when existing inputs contain Taproot signatures or final scripts.
 - Reject conflicting witness and non-witness UTXOs during verification, in
   both full and compressed parsing, so verified fee calculations cannot use
   an unauthenticated amount or script.
