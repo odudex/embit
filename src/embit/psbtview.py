@@ -1043,6 +1043,7 @@ class PSBTView:
             # same fields PSBT._sign_taproot_keypath fills
             inp.taproot_key_sig = sigdata
             inp.final_scriptwitness = Witness([sigdata])
+            self._update_tx_modifiable(sighash)
             # no need to sign anything else
             return 1
         counter = 0
@@ -1071,6 +1072,7 @@ class PSBTView:
             if sighash != SIGHASH.DEFAULT:
                 sigdata += bytes([sighash])
             inp.taproot_sigs[(pub, leaf)] = sigdata
+            self._update_tx_modifiable(sighash)
             counter += 1
         return counter
 
