@@ -65,6 +65,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PSBT_IN_TAP_BIP32_DERIVATION` and `PSBT_OUT_TAP_BIP32_DERIVATION` check
   the declared leaf hash count against the value length before building the
   list, so a crafted count cannot exhaust memory.
+- Legacy `SIGHASH_SINGLE` sighashes blanked the preceding outputs with a
+  `0xffffffff` value instead of Bitcoin Core's `-1`, in `Transaction`, `PSBT`
+  and `PSBTView`, so such signatures on any input past the first were invalid.
+- Compressed PSBTv2 parsing raises `PSBTError` when `PSBT_IN_OUTPUT_INDEX`
+  cannot be found before `PSBT_IN_NON_WITNESS_UTXO`, instead of silently
+  buffering the whole previous transaction.
+- `PSBT_IN_OUTPUT_INDEX` past the end of `PSBT_IN_NON_WITNESS_UTXO` raises
+  `PSBTError` at parse time without compression too, instead of `IndexError`
+  when signing.
+- Duplicate keys in input and output maps are rejected in every compression
+  mode, including PSET rangeproof keys.
+- PSBTv2 input and output maps are validated as soon as each is parsed, so a
+  huge declared count fails on the first invalid map.
+- `PSBTView` validates `PSBT_GLOBAL_XPUB` like `PSBT`, and BIP32 derivation
+  values must hold a full 4-byte fingerprint.
+- `PSETView` matched rangeproof and surjection proof keys by prefix, so a
+  longer unknown key was hashed as a proof under `SIGHASH_RANGEPROOF`.
 
 ## [0.8.2] - 2026-08-08
 
